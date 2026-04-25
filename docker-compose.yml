@@ -1,0 +1,80 @@
+services:
+  redis:
+    image: redis:7-alpine
+    command:
+      - redis-server
+      - --appendonly
+      - "no"
+      - --save
+      - ""
+      - --requirepass
+      - ${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}
+    ports:
+      - "5001:6379"
+    healthcheck:
+      test: ["CMD", "sh", "-c", "redis-cli -a \"$$REDIS_PASSWORD\" ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+
+  receiver:
+    build: .
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      API_PORT: "5000"
+      MAX_BODY_BYTES: ${MAX_BODY_BYTES:-1048576}
+      RUCKUS_ONE_WEBHOOK_SECRET: ${RUCKUS_ONE_WEBHOOK_SECRET:-}
+      RUCKUS_ONE_SOURCE_NAMES: ${RUCKUS_ONE_SOURCE_NAMES:-ruckus}
+    ports:
+      - "5000:5000"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    build: .
+    command: ["python", "-m", "worker.worker"]
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      RUCKUS_ONE_SOURCE_NAMES: ${RUCKUS_ONE_SOURCE_NAMES:-ruckus}
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: ["tunnel", "--no-autoupdate", "run", "--token", "${TUNNEL_TOKEN}"]
+    depends_on:
+      - receiver
+    restart: unless-stopped
+
+  # Web UI for inspecting Redis (streams, keys, TTLs). Opt-in only:
+  #   docker compose --profile debug up -d redisinsight
+  # Then http://localhost:5540 → Add Database → host=redis port=6379 password=$REDIS_PASSWORD
+  redisinsight:
+    image: redis/redisinsight:latest
+    ports:
+      - "5540:5540"
+    environment:
+      # Auto-add the redis service on first run so you skip the "Add Database" form.
+      RI_REDIS_HOST: redis
+      RI_REDIS_PORT: "6379"
+      RI_REDIS_ALIAS: webhook_rx-redis
+      RI_REDIS_USERNAME: default
+      RI_REDIS_PASSWORD: ${REDIS_PASSWORD}
+    volumes:
+      - redisinsight-data:/data
+    profiles: ["debug"]
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  redisinsight-data:

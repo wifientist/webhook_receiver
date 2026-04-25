@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.env
+*.egg-info/
+dist/
+build/
+
+# Claude Code local-only state (per-user permissions, etc.)
+.claude/settings.local.json
