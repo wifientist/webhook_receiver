@@ -15,13 +15,16 @@ tests/     pytest + fakeredis
 
 The receiver is a tight funnel. Anything that isn't a real Ruckus delivery gets rejected before it touches the queue:
 
-| Reject reason | HTTP |
-|---|---|
-| Path not in `RUCKUS_ONE_SOURCE_NAMES` | `404` |
-| Body larger than `MAX_BODY_BYTES` (default 1 MiB) | `413` |
-| Missing or wrong `Authorization` header (when secret configured) | `401` |
-| Body not valid JSON, or `type` ∉ `{incident, activity, event}`, or no object `payload` | `401` |
-| Valid + auth'd | `202` (and `{"status":"accepted","event_id":"…"}`) |
+| Reject reason | HTTP | Counter |
+|---|---|---|
+| Path not in `RUCKUS_ONE_SOURCE_NAMES` | `404` | `unknown_source` |
+| Body larger than `MAX_BODY_BYTES` (default 1 MiB) | `413` | `body_too_large` |
+| Bad `Content-Length` header | `400` | `invalid_content_length` |
+| Missing or wrong `Authorization` header (when secret configured) | `401` | `verification_failed` |
+| Body not valid JSON, or `type` ∉ `{incident, activity, event}`, or no object `payload` | `401` | `verification_failed` |
+| Valid + auth'd | `202` (and `{"status":"accepted","event_id":"…"}`) | — |
+
+Rejections are counted under `wh:stats:total:rejection_reason:<reason>` and surfaced in `/stats/counters` under the `rejections` block — useful for spotting probing/abuse spikes.
 
 Headers are used for verification + event-id derivation only. Nothing from the headers is persisted.
 
@@ -70,17 +73,30 @@ curl -X POST http://localhost:5000/webhook/ruckus \
 
 Repeat the exact same body within 24h → `{"status":"duplicate"}`. Change any byte of the payload → `{"status":"accepted"}` again.
 
-### Inspecting Redis from the CLI
+### Endpoints
+
+| Endpoint | What it tells you |
+|---|---|
+| `GET /healthz` | Receiver up + Redis reachable |
+| `GET /stats` | Live queue depth, in-flight count, dead-letter size |
+| `GET /stats/counters` | Throughput counters by `type` / `source` / `event_code` / `entity_type` / `severity` / `status`, plus rejections by reason. Three time windows: running totals (∞), today (1y TTL), last-24h hourly (90d TTL) |
+| `POST /webhook/{source}` | Ingest. `{source}` must match `RUCKUS_ONE_SOURCE_NAMES`. |
+
+### Inspecting from the CLI
 
 ```bash
+make counters          # /stats/counters, pretty-printed
+make queue             # /stats, pretty-printed
+make health            # /healthz
+make payloads          # dump every stored body (24h TTL)
+make deadletter        # dump entries the worker gave up on
+
+# raw redis-cli, if you want it
 docker compose exec redis redis-cli -a "$REDIS_PASSWORD" XLEN wh:stream
 docker compose exec redis redis-cli -a "$REDIS_PASSWORD" XPENDING wh:stream workers
-curl -s http://localhost:5000/stats
-curl -s http://localhost:5000/healthz
-
-./scripts/dump-payloads.sh             # all stored bodies, pretty-printed
-./scripts/dump-payloads.sh ruckus      # filter by source
 ```
+
+The Makefile is self-documenting: `make` (no args) lists every target.
 
 ---
 
