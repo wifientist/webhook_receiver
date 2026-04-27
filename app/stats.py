@@ -165,6 +165,42 @@ async def hourly_totals(redis: Redis, hours: int = 24) -> list[dict]:
     ]
 
 
+async def hourly_by_dim(
+    redis: Redis, dim: str, hours: int = 24
+) -> list[dict]:
+    """Last `hours` hours, each as `{hour, by_value: {value: count}}`.
+
+    Single SCAN over `wh:stats:hourly:*:<dim>:*`, then bucket by hour. Hours
+    with no entries for the dim still appear with `by_value: {}` so the
+    caller can render an unbroken time axis.
+    """
+    now = _utc_now()
+    wanted: list[str] = []
+    for i in range(hours - 1, -1, -1):
+        wanted.append((now - timedelta(hours=i)).strftime("%Y-%m-%d-%H"))
+    wanted_set = set(wanted)
+    out: dict[str, dict[str, int]] = {h: {} for h in wanted}
+
+    prefix = "wh:stats:hourly:"
+    keys: list[bytes] = []
+    async for key in redis.scan_iter(match=f"{prefix}*:{dim}:*", count=200):
+        keys.append(key)
+    if keys:
+        values = await redis.mget(keys)
+        for k, v in zip(keys, values):
+            ks = k.decode() if isinstance(k, bytes) else k
+            tail = ks[len(prefix):]
+            # tail = "<HOUR>:<dim>:<value>"; HOUR uses dashes only.
+            parts = tail.split(":", 2)
+            if len(parts) != 3:
+                continue
+            hour, kdim, value = parts
+            if kdim != dim or hour not in wanted_set:
+                continue
+            out[hour][value] = int(v) if v is not None else 0
+    return [{"hour": h, "by_value": out[h]} for h in wanted]
+
+
 async def snapshot(redis: Redis) -> Mapping[str, object]:
     """Single-call summary: running totals + today + last-24h hourly throughput."""
     now = _utc_now()
@@ -202,4 +238,5 @@ async def snapshot(redis: Redis) -> Mapping[str, object]:
             },
         },
         "last_24h_hourly": await hourly_totals(redis, hours=24),
+        "last_24h_by_type": await hourly_by_dim(redis, "type", hours=24),
     }

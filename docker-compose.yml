@@ -21,13 +21,13 @@ services:
 
   receiver:
     build: .
+    env_file: .env
+    # `env_file` pulls everything from .env; `environment:` overrides the
+    # bits that differ inside the docker network (REDIS_URL points at the
+    # service name, not localhost) plus compose-level static config.
     environment:
       REDIS_URL: redis://redis:6379/0
-      REDIS_PASSWORD: ${REDIS_PASSWORD}
       API_PORT: "5000"
-      MAX_BODY_BYTES: ${MAX_BODY_BYTES:-1048576}
-      RUCKUS_ONE_WEBHOOK_SECRET: ${RUCKUS_ONE_WEBHOOK_SECRET:-}
-      RUCKUS_ONE_SOURCE_NAMES: ${RUCKUS_ONE_SOURCE_NAMES:-ruckus}
     ports:
       - "5000:5000"
     depends_on:
@@ -38,10 +38,9 @@ services:
   worker:
     build: .
     command: ["python", "-m", "worker.worker"]
+    env_file: .env
     environment:
       REDIS_URL: redis://redis:6379/0
-      REDIS_PASSWORD: ${REDIS_PASSWORD}
-      RUCKUS_ONE_SOURCE_NAMES: ${RUCKUS_ONE_SOURCE_NAMES:-ruckus}
     depends_on:
       redis:
         condition: service_healthy

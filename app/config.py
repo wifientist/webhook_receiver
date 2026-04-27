@@ -24,5 +24,9 @@ class Settings(BaseSettings):
     # Anything not in this list returns 404.
     ruckus_one_source_names: str = "ruckus"
 
+    # Dashboard auth. Single shared password — no username. When unset, the
+    # dashboard is open (local dev / private networks).
+    dashboard_password: str | None = None
+
 
 settings = Settings()

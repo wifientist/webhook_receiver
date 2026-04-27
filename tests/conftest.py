@@ -5,7 +5,16 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 import app.redis_client as redis_module
+from app.config import settings as app_settings
 from app.main import app
+
+
+@pytest.fixture(autouse=True)
+def _isolated_settings(monkeypatch):
+    """Pin dashboard auth to OFF by default. Individual tests opt into auth
+    by setting `dashboard_password` themselves. Without this, a developer's
+    real .env (with DASHBOARD_PASSWORD set) leaks into the test harness."""
+    monkeypatch.setattr(app_settings, "dashboard_password", None)
 
 
 @pytest.fixture

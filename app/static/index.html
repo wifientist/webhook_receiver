@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>webhook_rx · dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1216;
+    --panel: #161b22;
+    --panel-2: #1c232c;
+    --border: #2a323d;
+    --text: #d8dee4;
+    --muted: #8a96a4;
+    --accent: #58a6ff;
+    --ok: #3fb950;
+    --warn: #d29922;
+    --bad: #f85149;
+    --action: #f85149;
+    --info: #58a6ff;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { padding: 14px 20px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: baseline; gap: 14px; }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  header .sub { color: var(--muted); font-size: 12px; }
+  header .grow { flex: 1; }
+  header .live { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  main { padding: 16px 20px; display: grid; gap: 16px; max-width: 1400px; margin: 0 auto; }
+
+  .strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+  .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+  .stat .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .stat .value { font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .stat.alert .value { color: var(--bad); }
+  .stat.warn .value { color: var(--warn); }
+
+  .grid-2 { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
+  @media (max-width: 1000px) { .grid-2 { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+  .card h2 { margin: 0 0 10px 0; font-size: 13px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.04em; }
+
+  .bars { display: flex; flex-direction: column; gap: 6px; }
+  .bar-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+  .bar-row .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  .bar-row .count { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; }
+  .bar-row .track { grid-column: 1 / -1; height: 4px; background: var(--panel-2);
+    border-radius: 2px; overflow: hidden; }
+  .bar-row .fill { height: 100%; background: var(--accent); }
+
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+  .controls select, .controls input {
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 4px; padding: 5px 8px; font: inherit; font-size: 12px;
+  }
+  .controls .pill { padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px;
+    color: var(--muted); cursor: pointer; user-select: none; font-size: 12px; }
+  .controls .pill.active { border-color: var(--accent); color: var(--accent); }
+
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--border);
+    font-size: 12.5px; vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em;
+    font-size: 11px; position: sticky; top: 0; background: var(--panel); }
+  tr.row { cursor: pointer; }
+  tr.row:hover { background: var(--panel-2); }
+  tr.action td:first-child { box-shadow: inset 3px 0 0 var(--action); }
+  tr.info td:first-child   { box-shadow: inset 3px 0 0 var(--info); }
+  td.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  td.muted { color: var(--muted); }
+  td.title { max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .badge { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 11px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .badge.action { background: rgba(248,81,73,0.15); color: var(--action); }
+  .badge.info   { background: rgba(88,166,255,0.12); color: var(--info); }
+  .badge.sev-HIGH, .badge.sev-CRITICAL { background: rgba(248,81,73,0.15); color: var(--action); }
+  .badge.sev-MEDIUM { background: rgba(210,153,34,0.18); color: var(--warn); }
+  .badge.sev-LOW, .badge.sev-INFO { background: rgba(88,166,255,0.12); color: var(--info); }
+
+  .empty { color: var(--muted); font-size: 13px; padding: 20px 8px; text-align: center; }
+
+  details.rejections summary { cursor: pointer; color: var(--muted); font-size: 12px;
+    text-transform: uppercase; letter-spacing: 0.04em; }
+  details.rejections[open] summary { margin-bottom: 10px; }
+
+  /* modal */
+  .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+    display: none; align-items: flex-start; justify-content: center; padding: 40px 20px;
+    z-index: 100; overflow: auto; }
+  .modal-bg.open { display: flex; }
+  .modal { background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    width: min(900px, 100%); max-width: 100%; }
+  .modal-head { display: flex; gap: 12px; align-items: center; padding: 12px 14px;
+    border-bottom: 1px solid var(--border); }
+  .modal-head .title { font-weight: 600; }
+  .modal-head .grow { flex: 1; }
+  .modal-head button { background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 4px; padding: 4px 10px; font: inherit; font-size: 12px; cursor: pointer; }
+  pre.json { margin: 0; padding: 14px; max-height: 70vh; overflow: auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+    white-space: pre-wrap; word-break: break-word; }
+</style>
+</head>
+<body>
+<header>
+  <h1>webhook_rx</h1>
+  <span class="sub">transient receiver · 24h window</span>
+  <span class="grow"></span>
+  <span class="live" id="live-status">connecting…</span>
+  <a href="#" id="logout" class="sub" style="margin-left: 14px; color: var(--muted); text-decoration: none;">sign out</a>
+</header>
+
+<main>
+  <section class="strip">
+    <div class="stat" id="stat-queue"><div class="label">Stream depth</div><div class="value">—</div></div>
+    <div class="stat" id="stat-pending"><div class="label">In flight</div><div class="value">—</div></div>
+    <div class="stat" id="stat-dead"><div class="label">Dead-letter</div><div class="value">—</div></div>
+    <div class="stat" id="stat-today"><div class="label">Received today</div><div class="value">—</div></div>
+    <div class="stat" id="stat-rejected"><div class="label">Rejected today</div><div class="value">—</div></div>
+  </section>
+
+  <section class="card">
+    <h2>Last 24h · by type</h2>
+    <div style="position: relative; height: 220px;"><canvas id="chart-24h"></canvas></div>
+  </section>
+
+  <section class="grid-2">
+    <div class="card">
+      <h2>Top event codes · today</h2>
+      <div id="bars-codes" class="bars"></div>
+    </div>
+    <div class="card">
+      <h2>Top entity types · running</h2>
+      <div id="bars-entities" class="bars"></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Recent events</h2>
+    <div class="controls">
+      <span class="pill active" data-cat="all">all</span>
+      <span class="pill" data-cat="action">action</span>
+      <span class="pill" data-cat="info">info</span>
+      <select id="filter-type">
+        <option value="">any type</option>
+        <option value="incident">incident</option>
+        <option value="activity">activity</option>
+        <option value="event">event</option>
+      </select>
+      <select id="filter-window" title="how many recent events to load from the server">
+        <option value="100" selected>last 100</option>
+        <option value="500">last 500</option>
+        <option value="2000">last 2000</option>
+        <option value="10000">all (max 10k)</option>
+      </select>
+      <input id="filter-search" type="search" placeholder="search title / code…" autocomplete="off">
+      <span style="color: var(--muted); font-size: 12px;" id="row-count"></span>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 130px;">time</th>
+          <th style="width: 80px;">type</th>
+          <th style="width: 90px;">severity</th>
+          <th style="width: 120px;">code</th>
+          <th>title</th>
+          <th style="width: 80px;">category</th>
+        </tr>
+      </thead>
+      <tbody id="events-tbody"></tbody>
+    </table>
+    <div class="empty" id="events-empty" style="display:none;">no events in window</div>
+  </section>
+
+  <section class="card">
+    <details class="rejections">
+      <summary>Rejections (today)</summary>
+      <div id="bars-rejections" class="bars"></div>
+    </details>
+  </section>
+</main>
+
+<div class="modal-bg" id="modal">
+  <div class="modal">
+    <div class="modal-head">
+      <span class="title" id="modal-title">payload</span>
+      <span class="grow"></span>
+      <button id="modal-copy">copy</button>
+      <button id="modal-close">close</button>
+    </div>
+    <pre class="json" id="modal-body"></pre>
+  </div>
+</div>
+
+<script>
+const POLL_MS = 5000;
+const TYPE_COLORS = { event: '#58a6ff', activity: '#3fb950', incident: '#f85149' };
+
+let chart24h = null;
+let lastEvents = [];
+let filterCategory = 'all';
+let filterType = '';
+let filterSearch = '';
+let recentWindow = 100;
+
+function fmtNum(n) { return (n ?? 0).toLocaleString(); }
+function fmtTime(ms) {
+  if (!ms) return '—';
+  const d = new Date(ms);
+  return d.toLocaleTimeString(undefined, { hour12: false }) + ' ' +
+         d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+function trimHourLabel(h) {
+  // "2026-04-27-15" → "15:00"
+  const parts = h.split('-');
+  return (parts[3] ?? '') + ':00';
+}
+function el(tag, attrs, ...children) {
+  const e = document.createElement(tag);
+  if (attrs) for (const [k, v] of Object.entries(attrs)) {
+    if (k === 'class') e.className = v;
+    else if (k === 'dataset') Object.assign(e.dataset, v);
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else e.setAttribute(k, v);
+  }
+  for (const c of children) {
+    if (c == null || c === false) continue;
+    e.append(c instanceof Node ? c : document.createTextNode(String(c)));
+  }
+  return e;
+}
+
+async function jget(url) {
+  const r = await fetch(url, { credentials: 'same-origin' });
+  if (!r.ok) throw new Error(url + ' ' + r.status);
+  return r.json();
+}
+
+function setStat(id, value, mod) {
+  const node = document.getElementById(id);
+  node.querySelector('.value').textContent = fmtNum(value);
+  node.classList.remove('alert', 'warn');
+  if (mod) node.classList.add(mod);
+}
+
+function renderBars(containerId, entries, opts = {}) {
+  const c = document.getElementById(containerId);
+  c.innerHTML = '';
+  if (!entries.length) { c.append(el('div', { class: 'empty' }, 'no data')); return; }
+  const max = Math.max(...entries.map(e => e[1]));
+  for (const [name, count] of entries) {
+    const pct = max ? (count / max) * 100 : 0;
+    const fillColor = opts.colorFor ? opts.colorFor(name) : 'var(--accent)';
+    const fill = el('div', { class: 'fill' });
+    fill.style.width = pct.toFixed(1) + '%';
+    fill.style.background = fillColor;
+    c.append(el('div', { class: 'bar-row' },
+      el('span', { class: 'name' }, name),
+      el('span', { class: 'count' }, fmtNum(count)),
+      el('div', { class: 'track' }, fill),
+    ));
+  }
+}
+
+function topN(obj, n = 8) {
+  return Object.entries(obj || {}).sort((a, b) => b[1] - a[1]).slice(0, n);
+}
+
+function render24hChart(buckets) {
+  const labels = buckets.map(b => trimHourLabel(b.hour));
+  const types = new Set();
+  for (const b of buckets) for (const k of Object.keys(b.by_value || {})) types.add(k);
+  // Stable order so colors don't jump.
+  const ordered = ['event', 'activity', 'incident', ...Array.from(types).filter(t => !['event','activity','incident'].includes(t))]
+    .filter(t => types.has(t));
+  const datasets = ordered.map(t => ({
+    label: t,
+    data: buckets.map(b => (b.by_value && b.by_value[t]) || 0),
+    backgroundColor: TYPE_COLORS[t] || '#8a96a4',
+    borderWidth: 0,
+    stack: 'all',
+  }));
+  if (!chart24h) {
+    const ctx = document.getElementById('chart-24h').getContext('2d');
+    chart24h = new Chart(ctx, {
+      type: 'bar',
+      data: { labels, datasets },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: false,
+        plugins: {
+          legend: { labels: { color: '#d8dee4', boxWidth: 12, font: { size: 11 } } },
+          tooltip: { mode: 'index', intersect: false },
+        },
+        scales: {
+          x: { stacked: true, ticks: { color: '#8a96a4', font: { size: 10 }, maxRotation: 0, autoSkipPadding: 12 },
+               grid: { color: 'rgba(138,150,164,0.08)' } },
+          y: { stacked: true, beginAtZero: true, ticks: { color: '#8a96a4', font: { size: 10 }, precision: 0 },
+               grid: { color: 'rgba(138,150,164,0.08)' } },
+        },
+      },
+    });
+  } else {
+    chart24h.data.labels = labels;
+    chart24h.data.datasets = datasets;
+    chart24h.update('none');
+  }
+}
+
+function renderEventsTable() {
+  const tbody = document.getElementById('events-tbody');
+  const empty = document.getElementById('events-empty');
+  const search = filterSearch.trim().toLowerCase();
+  const filtered = lastEvents.filter(e => {
+    if (filterCategory !== 'all' && e.category !== filterCategory) return false;
+    if (filterType && e.type !== filterType) return false;
+    if (search) {
+      const hay = ((e.title || '') + ' ' + (e.event_code || '') + ' ' + (e.event_id || '')).toLowerCase();
+      if (!hay.includes(search)) return false;
+    }
+    return true;
+  });
+  document.getElementById('row-count').textContent =
+    `${filtered.length} / ${lastEvents.length}`;
+  tbody.innerHTML = '';
+  empty.style.display = filtered.length ? 'none' : '';
+  for (const e of filtered) {
+    const tr = el('tr', {
+      class: 'row ' + (e.category || 'info'),
+      onclick: () => openModal(e),
+    },
+      el('td', { class: 'mono muted' }, fmtTime(e.received_at)),
+      el('td', null, e.type || '—'),
+      el('td', null, e.severity
+        ? el('span', { class: 'badge sev-' + (e.severity || '').replace(/[^A-Z]/gi, '') }, e.severity)
+        : '—'),
+      el('td', { class: 'mono' }, e.event_code || '—'),
+      el('td', { class: 'title' }, e.title || e.name || (e.has_payload ? '(no title)' : '(payload expired)')),
+      el('td', null, el('span', { class: 'badge ' + (e.category || 'info') }, e.category || 'info')),
+    );
+    tbody.append(tr);
+  }
+}
+
+async function openModal(e) {
+  const m = document.getElementById('modal');
+  document.getElementById('modal-title').textContent =
+    `${e.type || 'event'} · ${e.event_id || e.delivery_id || ''}`;
+  const body = document.getElementById('modal-body');
+  body.textContent = 'loading…';
+  m.classList.add('open');
+  try {
+    const data = await jget(`/events/${encodeURIComponent(e.source)}/${encodeURIComponent(e.delivery_id)}`);
+    body.textContent = JSON.stringify(data, null, 2);
+    body.dataset.raw = body.textContent;
+  } catch (err) {
+    body.textContent = '(' + err.message + ')';
+  }
+}
+
+document.getElementById('modal-close').onclick =
+  () => document.getElementById('modal').classList.remove('open');
+document.getElementById('modal').onclick = (ev) => {
+  if (ev.target.id === 'modal') ev.currentTarget.classList.remove('open');
+};
+document.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Escape') document.getElementById('modal').classList.remove('open');
+});
+document.getElementById('modal-copy').onclick = async () => {
+  const txt = document.getElementById('modal-body').dataset.raw || '';
+  try { await navigator.clipboard.writeText(txt); } catch { /* ignore */ }
+};
+
+document.querySelectorAll('.pill[data-cat]').forEach(p => {
+  p.addEventListener('click', () => {
+    document.querySelectorAll('.pill[data-cat]').forEach(x => x.classList.remove('active'));
+    p.classList.add('active');
+    filterCategory = p.dataset.cat;
+    renderEventsTable();
+  });
+});
+document.getElementById('filter-type').addEventListener('change', (ev) => {
+  filterType = ev.target.value;
+  renderEventsTable();
+});
+document.getElementById('filter-search').addEventListener('input', (ev) => {
+  filterSearch = ev.target.value;
+  renderEventsTable();
+});
+document.getElementById('filter-window').addEventListener('change', (ev) => {
+  recentWindow = parseInt(ev.target.value, 10) || 100;
+  tick();  // refetch immediately so the user sees the wider window without waiting
+});
+
+async function tick() {
+  const live = document.getElementById('live-status');
+  try {
+    const [queue, counters, recent] = await Promise.all([
+      jget('/stats'),
+      jget('/stats/counters'),
+      jget('/events/recent?n=' + recentWindow),
+    ]);
+
+    setStat('stat-queue', queue.length, queue.length > 1000 ? 'warn' : null);
+    setStat('stat-pending', queue.pending, queue.pending > 100 ? 'warn' : null);
+    setStat('stat-dead', queue.dead_length, queue.dead_length > 0 ? 'alert' : null);
+    setStat('stat-today', counters.today?.received || 0);
+    setStat('stat-rejected', counters.rejections?.today?.received || 0,
+      (counters.rejections?.today?.received || 0) > 0 ? 'warn' : null);
+
+    render24hChart(counters.last_24h_by_type || []);
+    renderBars('bars-codes', topN(counters.today?.by_event_code, 10));
+    renderBars('bars-entities', topN(counters.running_totals?.by_entity_type, 10));
+    renderBars('bars-rejections', topN(counters.rejections?.today?.by_reason, 10),
+      { colorFor: () => 'var(--bad)' });
+
+    lastEvents = recent.events || [];
+    renderEventsTable();
+
+    live.textContent = 'live · ' + new Date().toLocaleTimeString(undefined, { hour12: false });
+    live.style.color = 'var(--ok)';
+  } catch (err) {
+    live.textContent = 'error: ' + err.message;
+    live.style.color = 'var(--bad)';
+  }
+}
+
+document.getElementById('logout').addEventListener('click', async (ev) => {
+  ev.preventDefault();
+  try { await fetch('/api/logout', { method: 'POST', credentials: 'same-origin' }); } catch {}
+  window.location.href = '/login';
+});
+
+tick();
+setInterval(tick, POLL_MS);
+</script>
+</body>
+</html>

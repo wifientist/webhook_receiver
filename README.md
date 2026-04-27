@@ -5,10 +5,11 @@ A transient Ruckus One webhook receiver. FastAPI on **:5000**, Redis on **:5001*
 ## Layout
 
 ```
-app/       FastAPI receiver (Ruckus auth + shape validation, dedup, enqueue)
-worker/    consumer-group worker + Ruckus handler
-scripts/   convenience helpers (e.g. dump-payloads.sh)
-tests/     pytest + fakeredis
+app/         FastAPI receiver (Ruckus auth + shape validation, dedup, enqueue)
+app/static/  dashboard (vanilla JS + Chart.js, served at /dashboard)
+worker/      consumer-group worker + Ruckus handler
+scripts/     convenience helpers (e.g. dump-payloads.sh)
+tests/       pytest + fakeredis
 ```
 
 ## What gets accepted
@@ -80,6 +81,12 @@ Repeat the exact same body within 24h → `{"status":"duplicate"}`. Change any b
 | `GET /healthz` | Receiver up + Redis reachable |
 | `GET /stats` | Live queue depth, in-flight count, dead-letter size |
 | `GET /stats/counters` | Throughput counters by `type` / `source` / `event_code` / `entity_type` / `severity` / `status`, plus rejections by reason. Three time windows: running totals (∞), today (1y TTL), last-24h hourly (90d TTL) |
+| `GET /dashboard` | Browser dashboard (see below). Redirects to `/login` when `DASHBOARD_PASSWORD` is set and you're not logged in. |
+| `GET /login` | Password form (only when `DASHBOARD_PASSWORD` is set; otherwise redirects to `/dashboard`). |
+| `POST /api/login` | `{"password": "…"}` → sets `wh_session` cookie. |
+| `POST /api/logout` | Clears the session cookie. |
+| `GET /events/recent?n=N` | Newest-first stream tail with extracted payload fields + action/info classification. Cookie-gated. |
+| `GET /events/{source}/{delivery_id}` | Full stored payload. 404 once the 24h TTL elapses. Cookie-gated. |
 | `POST /webhook/{source}` | Ingest. `{source}` must match `RUCKUS_ONE_SOURCE_NAMES`. |
 
 ### Inspecting from the CLI
@@ -97,6 +104,34 @@ docker compose exec redis redis-cli -a "$REDIS_PASSWORD" XPENDING wh:stream work
 ```
 
 The Makefile is self-documenting: `make` (no args) lists every target.
+
+---
+
+## Dashboard
+
+A single-file dashboard at `http://localhost:5000/dashboard` reads exclusively from Redis — no extra services, no persistence beyond the existing 24h window. It shows:
+
+- **Top strip** — stream depth, in-flight, dead-letter (red when > 0), received-today, rejected-today
+- **Last 24h** — hourly stacked bar by `type` (incident / activity / event)
+- **Top event codes** (today) and **top entity types** (running)
+- **Recent events table** — newest 100, filterable by category (action / info), type, and free-text search; click a row to see the full payload
+- **Rejections panel** (collapsed) — today's rejection reasons
+
+The action/info split is rules-based — see `classify()` in [app/events.py](app/events.py). Tune the rules as you observe real traffic.
+
+### Auth
+
+A single shared password gates the dashboard. Set it in `.env`:
+
+```bash
+DASHBOARD_PASSWORD=$(openssl rand -hex 16)
+```
+
+Visiting `/dashboard` while unauthenticated redirects to `/login` — a small password form. Submitting the right password sets an HttpOnly session cookie (`wh_session`) and lands you on the dashboard. The cookie is good for 7 days; rotating `DASHBOARD_PASSWORD` invalidates every outstanding cookie automatically (the cookie value is `HMAC-SHA256(password, fixed-string)` — the password *is* the signing key). The "sign out" link top-right clears it.
+
+Leave `DASHBOARD_PASSWORD` empty for an open dashboard (local-only dev) — `/login` redirects straight to `/dashboard`. The webhook intake path is **not** affected either way; Ruckus still POSTs unauthenticated (gated by its own `Authorization` secret).
+
+If you also expose this through a Cloudflare Tunnel and want SSO instead of a shared password, point **Cloudflare Access** (Zero Trust → Applications → email/Google OTP) at the `/dashboard`, `/login`, `/api/*`, and `/events/*` paths. The shared password and Cloudflare Access aren't mutually exclusive — Access in front, password as a second factor — but for personal use one or the other is plenty.
 
 ---
 

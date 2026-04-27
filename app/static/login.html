@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>webhook_rx · sign in</title>
+<style>
+  :root {
+    --bg: #0f1216;
+    --panel: #161b22;
+    --panel-2: #1c232c;
+    --border: #2a323d;
+    --text: #d8dee4;
+    --muted: #8a96a4;
+    --accent: #58a6ff;
+    --bad: #f85149;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  body { display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 28px 28px 24px; width: 100%; max-width: 360px; }
+  h1 { margin: 0 0 4px 0; font-size: 16px; font-weight: 600; }
+  .sub { color: var(--muted); font-size: 12px; margin-bottom: 20px; }
+  label { display: block; color: var(--muted); font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.04em; margin-bottom: 6px; }
+  input[type=password] {
+    width: 100%; background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px; padding: 9px 11px;
+    font: inherit; font-size: 14px;
+  }
+  input[type=password]:focus { outline: none; border-color: var(--accent); }
+  button {
+    margin-top: 14px; width: 100%; background: var(--accent); color: #0d1117;
+    border: 0; border-radius: 6px; padding: 9px 12px; font: inherit; font-size: 14px;
+    font-weight: 600; cursor: pointer;
+  }
+  button:disabled { opacity: 0.6; cursor: progress; }
+  .err { color: var(--bad); font-size: 12px; min-height: 16px; margin-top: 10px; }
+</style>
+</head>
+<body>
+<form class="card" id="login-form">
+  <h1>webhook_rx</h1>
+  <div class="sub">Enter the dashboard password.</div>
+  <label for="pw">Password</label>
+  <input id="pw" name="password" type="password" autofocus autocomplete="current-password" required>
+  <button id="btn" type="submit">Sign in</button>
+  <div class="err" id="err"></div>
+</form>
+<script>
+const form = document.getElementById('login-form');
+const pw = document.getElementById('pw');
+const btn = document.getElementById('btn');
+const err = document.getElementById('err');
+
+form.addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  err.textContent = '';
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ password: pw.value }),
+    });
+    if (r.status === 401) {
+      err.textContent = 'wrong password';
+      pw.select();
+    } else if (!r.ok) {
+      err.textContent = 'error: ' + r.status;
+    } else {
+      window.location.href = '/dashboard';
+      return;
+    }
+  } catch (e) {
+    err.textContent = 'network error';
+  } finally {
+    btn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>

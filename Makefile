@@ -48,4 +48,7 @@ debug-up:  ## Start RedisInsight UI (debug profile) on :5540
 debug-down:  ## Stop RedisInsight without taking down the rest
 	docker compose --profile debug stop redisinsight
 
-.PHONY: help up down rebuild logs logs-all ps test counters queue health payloads deadletter debug-up debug-down
+dashboard:  ## Print the dashboard URL (open it in a browser)
+	@echo "http://localhost:5000/dashboard"
+
+.PHONY: help up down rebuild logs logs-all ps test counters queue health payloads deadletter debug-up debug-down dashboard
